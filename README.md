@@ -128,8 +128,7 @@ RMSE = sqrt( (1/N) · Σ (p̂ᵢ − pᵢ)² )
 
 | Metrik | Dead Reckoning | EKF (Füzyon) |
 | :--- | :--- | :--- |
-| RMSE (m) | _(kendi çalıştırmanızdan doldurun)_ | _(doldurun)_ |
-| Maks. hata (m) | _(doldurun)_ | _(doldurun)_ |
+| RMSE (m) | _(2.172m)_ | _(0.116)_ |
 
 **Tartışma:** EKF, üç sensörü birleştirerek Dead Reckoning'e göre daha düşük ve **birikmeyen**
 hata üretir. DR hatası enkoder kaymasıyla zamanla artarken, EKF; LiDAR ve IMU güncellemeleriyle

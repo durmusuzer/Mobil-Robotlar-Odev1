@@ -119,8 +119,7 @@ ve DR RMSE değerlerini bar grafiklerinde yan yana sunar.
 > görüntüsü alın, `images/` klasörüne koyun ve buraya ekleyin:
 >
 > ```markdown
-> ![Ortam ve yol]<img width="1048" height="799" alt="{338CF148-3F17-449E-842C-7FF29EF4D9D4}" src="https://github.com/user-attachments/assets/40ba9a9e-15e0-459c-a18b-22ac86ca1570" />
-
+> ![Ortam ve yol](<img width="1048" height="799" alt="ortam ve yol" src="https://github.com/user-attachments/assets/37f419fe-a402-43f3-9f2f-0ca9592fa517" />
 > ![Lokalizasyon](images/lokalizasyon.png)
 > ![Hata grafiği](images/hata.png)
 > ```

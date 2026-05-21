@@ -115,15 +115,6 @@ Program çalıştırıldığında tek pencerede dört canlı panel gösterilir:
 **KARSILASTIR** butonu, tüm planlayıcılar için hedefe ulaşma süresi, yol uzunluğu, EKF RMSE
 ve DR RMSE değerlerini bar grafiklerinde yan yana sunar.
 
-> **Görselleri kaydetme:** Simülasyon interaktiftir; grafikler otomatik kaydedilmez. Ekran
-> görüntüsü alın, `images/` klasörüne koyun ve buraya ekleyin:
->
-> ```markdown
-> ![Ortam ve yol](<img width="1048" height="799" alt="ortam ve yol" src="https://github.com/user-attachments/assets/37f419fe-a402-43f3-9f2f-0ca9592fa517" />
-> ![Lokalizasyon](images/lokalizasyon.png)
-> ![Hata grafiği](images/hata.png)
-> ```
-
 ---
 
 ## 4. Hata Analizi ve Kısa Tartışma

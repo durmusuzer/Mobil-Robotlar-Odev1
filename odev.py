@@ -338,12 +338,15 @@ class LiDAR:
         self.angles=np.linspace(0,2*np.pi,num_beams,endpoint=False)
 
     def scan(self, x, y, theta):
-        raw, filt = [], []
+        raw = []
         for a in self.angles:
-            d=self._cast(x,y,theta+a)
-            raw.append(max(0.05, d+np.random.normal(0,self.noise_std)))
-            filt.append(max(0.05,d))
-        return np.array(raw), np.array(filt)
+            d = self._cast(x, y, theta + a)
+            raw.append(max(0.05, d + np.random.normal(0, self.noise_std)))
+        raw = np.array(raw)
+        # Circular median filter (window=5): gerçek filtreleme, true değeri kullanmaz
+        k, n = 2, len(raw)
+        filt = np.array([np.median(raw[np.arange(i - k, i + k + 1) % n]) for i in range(n)])
+        return raw, filt
 
     def _cast(self, x, y, angle):
         cos_a=math.cos(angle); sin_a=math.sin(angle)
@@ -377,14 +380,14 @@ class LiDAR:
         return clusters
 
 class IMU:
-    def __init__(self, noise_std=0.012, bias=0.003):
+    def __init__(self, noise_std=0.06, bias=0.018):
         self.noise_std=noise_std; self.bias=bias
 
     def measure(self, omega):
         return omega+self.bias+np.random.normal(0,self.noise_std)
 
 class Encoder:
-    def __init__(self, slip=0.01):
+    def __init__(self, slip=0.05):
         self.slip=slip
 
     def measure(self, dl, dr):
@@ -660,12 +663,15 @@ class AckermannRobot:
 ROBOT_TYPES={"Differential":DiffDriveRobot,"Ackermann":AckermannRobot}
 
 class DeadReckoning:
-    def __init__(self,x,y,theta,L=0.5):
+    def __init__(self,x,y,theta,L=0.5,noise_std=0.01,bias=0.004):
         self.x=x; self.y=y; self.theta=theta; self.L=L
+        self.noise_std=noise_std; self.bias=bias
         self.history=[(x,y)]
 
     def update(self,dl,dr):
-        dS=(dl+dr)/2; dth=(dr-dl)/self.L
+        dl_n=dl*(1+np.random.normal(0,self.noise_std)+self.bias)
+        dr_n=dr*(1+np.random.normal(0,self.noise_std)-self.bias)
+        dS=(dl_n+dr_n)/2; dth=(dr_n-dl_n)/self.L
         self.x+=dS*math.cos(self.theta+dth/2)
         self.y+=dS*math.sin(self.theta+dth/2)
         self.theta+=dth
@@ -1072,6 +1078,7 @@ class Simulation:
         self.ekf=EKF(sx,sy,initial_theta,self.env,L=self.robot.L)
         self.true_path=[(sx,sy)]
         self.lidar_raw=[]; self.lidar_filt=[]
+        self.lidar_filt_ranges=[]
         self.errors_ekf=[]; self.errors_dr=[]
         self.times=[]; self.t=0.0
         self.path_idx=0; self.done=False
@@ -1112,8 +1119,9 @@ class Simulation:
         self.lidar_raw=self.lidar.to_points(r.x,r.y,r.theta,raw)
         self.lidar_filt=self.lidar.to_points(r.x,r.y,r.theta,filt)
         self.lidar_raw_ranges=raw
+        self.lidar_filt_ranges=filt
 
-        if self._dstar is not None:
+        if self._dstar is not None and not getattr(self, '_comparison_mode', False):
             pp  = ROBOT_PLAN_PARAMS[self.robot_type]
             mg  = pp["margin"]
             self._replan_cooldown = max(0, getattr(self, '_replan_cooldown', 0) - 1)
@@ -1205,7 +1213,7 @@ class Simulation:
         self._prev_pos=(self.robot.x,self.robot.y)
         if moved<0.02: self._stuck_ctr+=1
         else: self._stuck_ctr=0
-        if self._stuck_ctr>=25 and not self.done:
+        if self._stuck_ctr>=25 and not self.done and not getattr(self,'_comparison_mode',False):
             self._replan(); self._stuck_ctr=0
 
     def _replan(self):
@@ -1445,6 +1453,7 @@ class GUI:
         self._bg = None
         self.fig.canvas.mpl_connect('resize_event', self._on_resize)
         self.fig.canvas.mpl_connect('draw_event',   self._on_draw)
+        self._arm_preview()
 
     def _style(self,*axes):
         for ax in axes:
@@ -1560,17 +1569,17 @@ class GUI:
 
     def _init_lidar_artists(self):
         ax = self.ax_lidar; ax.clear(); self._style(ax)
-        ax.set_title("LiDAR Nokta Bulutu  |  Ham Veri + Kume Renklendirmesi",
+        ax.set_title("LiDAR  |  Ham Gurultulu  +  Median Filtre & Kume Tespiti",
                      color=C_BRIGHT, fontsize=8, pad=4)
         ax.set_xlabel("Goreceli X (m)", color=C_MID, fontsize=7)
         ax.set_ylabel("Goreceli Y (m)", color=C_MID, fontsize=7)
         ax.grid(True, alpha=0.6, color=GRID_C)
         ax.set_aspect("equal")
         ax.set_xlim(-8, 8); ax.set_ylim(-8, 8)
-        self._sc_raw  = ax.scatter([], [], s=4, c=C_DIM, alpha=0.30,
-                                   label="Ham (gurultulu)", zorder=3, animated=True)
-        self._sc_clust = ax.scatter([], [], s=10, c=C_OK, alpha=0.90,
-                                    label="Kume (filtrelenmis)", zorder=4, animated=True)
+        self._sc_raw   = ax.scatter([], [], s=4, c=C_DIM, alpha=0.35,
+                                    label="Ham (gurultulu)", zorder=3, animated=True)
+        self._sc_clust = ax.scatter([], [], s=10, c=C_OK, alpha=0.85,
+                                    label="Median Filtre + Kume", zorder=4, animated=True)
         ax.plot(0, 0, color=C_BRIGHT, marker="^", ms=9, zorder=5, label="Robot")
         ax.legend(fontsize=6.5, facecolor=PANEL, labelcolor=C_BRIGHT, framealpha=0.8)
 
@@ -1747,24 +1756,27 @@ class GUI:
         raw_rel = raw_pts - [r.x, r.y]
         self._sc_raw.set_offsets(raw_rel)
 
-        raw_ranges = self.sim.lidar_raw_ranges
-        if len(raw_ranges) == 0:
+        filt_ranges = getattr(self.sim, 'lidar_filt_ranges', [])
+        if len(filt_ranges) == 0 or not self.sim.lidar_filt:
             self._sc_clust.set_offsets(np.empty((0, 2)))
             return
 
-        n = len(raw_ranges)
+        filt_pts = np.array(self.sim.lidar_filt)
+        filt_rel = filt_pts - [r.x, r.y]
+
+        # Gap-based cluster detection on median-filtered ranges
+        n = len(filt_ranges)
         max_r = self.sim.lidar.max_range
         cluster_ids = np.full(n, -1, dtype=int)
         cid = -1; prev_i = -1
-        for i, d in enumerate(raw_ranges):
+        for i, d in enumerate(filt_ranges):
             if d >= max_r * 0.98:
-                prev_i = -1
-                continue
+                prev_i = -1; continue
             if prev_i == -1:
                 cid += 1
             else:
-                gap = math.hypot(raw_pts[i, 0] - raw_pts[prev_i, 0],
-                                 raw_pts[i, 1] - raw_pts[prev_i, 1])
+                gap = math.hypot(filt_pts[i, 0] - filt_pts[prev_i, 0],
+                                 filt_pts[i, 1] - filt_pts[prev_i, 1])
                 if gap > 0.5:
                     cid += 1
             cluster_ids[i] = cid
@@ -1775,9 +1787,8 @@ class GUI:
             self._sc_clust.set_offsets(np.empty((0, 2)))
             return
 
-        clust_rel = raw_rel[mask]
         colors = [CLUSTER_PAL[c % len(CLUSTER_PAL)] for c in cluster_ids[mask]]
-        self._sc_clust.set_offsets(clust_rel)
+        self._sc_clust.set_offsets(filt_rel[mask])
         self._sc_clust.set_facecolor(colors)
 
     def _update_loc(self):
@@ -1880,10 +1891,10 @@ class GUI:
         if getattr(self, '_refreshing_bg', False):
             return
         if self._bg is None:
-            self._refresh_bg()
-            if hasattr(self, '_animated_arts') and hasattr(self, '_ln_plan'):
-                self._update_metrics()
-                self._preview_plan()
+            try:
+                self._bg = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+            except Exception:
+                pass
 
     def _refresh_bg(self):
         self._refreshing_bg = True
@@ -2139,11 +2150,10 @@ class GUI:
 
     def _on_start(self,_):
         self._stop_timer()
-                                                                          
         self._prev_pe = self.sim.path_error
         self._prev_dn = self.sim.done
-        self._refresh_bg()
-        self.timer=self.fig.canvas.new_timer(interval=16)                 
+        self._bg = None
+        self.timer=self.fig.canvas.new_timer(interval=16)
         self.timer.add_callback(self._tick)
         self.timer.start()
 
@@ -2154,7 +2164,31 @@ class GUI:
     def _full_redraw(self):
         self._collect_animated_arts()
         self._update_metrics()
-        self._refresh_bg()
+        self._bg = None
+        self.fig.canvas.draw_idle()
+        self._arm_preview()
+
+    def _arm_preview(self):
+        if getattr(self, '_preview_armed', False):
+            return
+        self._preview_armed = True
+        t = self.fig.canvas.new_timer(interval=120)
+        t.add_callback(self._fire_preview)
+        t.start()
+        self._preview_t = t
+
+    def _fire_preview(self):
+        if hasattr(self, '_preview_t'):
+            self._preview_t.stop()
+            del self._preview_t
+        self._preview_armed = False
+        if self._bg is None:
+            try:
+                self.fig.canvas.draw()
+                self._bg = self.fig.canvas.copy_from_bbox(self.fig.bbox)
+            except Exception:
+                return
+        self._update_metrics()
         self._preview_plan()
 
     def _preview_plan(self):
@@ -2238,6 +2272,7 @@ class GUI:
         sim.loc_algo   = "EKF"
         sim.robot_type = self.sim.robot_type
         sim.reset()
+        sim._comparison_mode = True
         return sim
 
     def _run_comparison_data(self):
@@ -2257,7 +2292,9 @@ class GUI:
             goal = sim.env.goal
             best_dist = math.hypot(sim.robot.x - goal[0], sim.robot.y - goal[1])
             stall = 0
-            for step_i in range(2000):
+            MAX_STEPS = 1200
+            STALL_LIM = 200
+            for step_i in range(MAX_STEPS):
                 if sim.done: break
                 sim.step(dt=0.1)
                 d = math.hypot(sim.robot.x - goal[0], sim.robot.y - goal[1])
@@ -2265,9 +2302,9 @@ class GUI:
                     best_dist = d; stall = 0
                 else:
                     stall += 1
-                if stall >= 400:
+                if stall >= STALL_LIM:
                     break
-                if step_i % 250 == 249:
+                if step_i % 30 == 29:
                     self._comparison_progress(algo, idx, total)
 
             reached = (not sim.path_error and
